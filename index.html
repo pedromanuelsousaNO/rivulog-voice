@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>RivuLog Voice Bridge</title>
 <style>:root{color-scheme:dark;--accent:#4fd1c5;--bg:#071417;--line:#285057}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#e5f6f4;font:15px system-ui,sans-serif;padding:19px}h1{font-size:25px;margin:0 0 6px}.subtitle,.muted{color:#a5c6c3}select{font:inherit;background:#19383e;color:#e5f6f4;border:1px solid var(--line);border-radius:8px;padding:10px;max-width:100%}.langrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px}.langrow label{color:#a5c6c3}section{border:1px solid var(--line);border-radius:15px;padding:15px;margin-top:15px;background:#11262a}button{font:inherit;padding:12px 15px;border:1px solid var(--line);background:#19383e;color:white;border-radius:10px;cursor:pointer}button.primary{background:var(--accent);color:#052623;font-weight:750}button:disabled{opacity:.5}.buttons{display:flex;gap:9px;flex-wrap:wrap;margin:12px 0}.status{font-weight:750;margin:10px 0;white-space:pre-wrap}.tank{font-size:34px;font-weight:850;color:var(--accent)}.heard{overflow-wrap:anywhere}table{width:100%;border-collapse:collapse;font-size:13px}td{padding:7px 4px;border-bottom:1px solid var(--line)}td:first-child{color:var(--accent);font-weight:700}small{display:block;margin-top:10px;color:#a5c6c3}.trendgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}.trendbox{background:#081c20;border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}.trendbox h3{margin:0 0 5px;font-size:17px}.trendbox svg{display:block;width:100%;height:auto}.trendhead{display:flex;align-items:center;justify-content:space-between;gap:12px}.trendhead h2{margin:0}#trends[hidden]{display:none!important}#trends{scroll-margin-top:10px} .trendsub{font-size:13px;color:#a5c6c3;margin:8px 0 14px}</style>
-</head><body><header><h1>🎤 RivuLog Voice Bridge</h1><div class="subtitle">Desktop water testing · V5.3.4</div></header>
+</head><body><header><h1>🎤 RivuLog Voice Bridge</h1><div class="subtitle">Desktop water testing · V5.3.5</div></header>
 <section><div class="muted">Connection</div><div id="connection" class="status">Waiting for RivuLog…</div><div class="langrow"><label for="language">Recognition language</label><select id="language"><option value="pt-PT">🇵🇹 Português (Portugal)</option><option value="en-GB">🇬🇧 English (UK)</option><option value="en-US">🇺🇸 English (US)</option></select></div><div id="status" class="status">Microphone is off</div><div class="buttons"><button class="primary" id="start">Start listening</button><button id="stop" disabled>Stop</button></div><div class="muted">Last heard</div><div id="heard" class="tank">—</div><div id="result" class="status muted">Say a command after connecting.</div><small>This page needs Chrome or Edge and permission to use your microphone. Keep this window open while testing.</small></section>
 <section id="trends" hidden><div class="trendhead"><h2 id="trendtitle">Water trends</h2><button id="hidetrend">Hide trends</button></div><div id="trendinfo" class="trendsub">Loading…</div><div class="trendgrid" id="trendgrid"></div></section><section><h2 id="commandtitle">Comandos de voz / Voice commands</h2><table id="commandtable"></table><small id="commandnote">Say one command at a time. Switch language above before speaking.</small></section>
 <script>
@@ -19,6 +19,7 @@ function hello(){if(!window.opener){$('connection').textContent='This page must 
 function localizeReply(message){
  const raw=String(message||'').trim();
  if(!pt())return raw;
+ if(/(?:[ãõáàâéêíóôúç]|\b(?:aquário|gráficos|leitura|guardar|selecionado|ligado|comando|microfone)\b)/i.test(raw) && !/^(?:Tank|Showing|Returned|Please|Open|Save|Command|No tank|Trends)/i.test(raw))return raw;
  let m;
  if((m=raw.match(/^Tank\s+(\d+)\s+selected\.$/i)))return 'Aquário '+m[1]+' selecionado.';
  if((m=raw.match(/^Showing trends for tank\s+(\d+)\.$/i)))return 'A mostrar os gráficos do aquário '+m[1]+'.';
@@ -39,9 +40,17 @@ function localizeReply(message){
 }
 function speak(message){
  if(!('speechSynthesis' in window))return;
- const translated=localizeReply(message);
- const text=translated||String(message||'');
- const locale=translated?language:(pt()?'en-GB':language);
+ // Never read an English response using a Portuguese voice. If no
+ // Portuguese translation exists, keep the reply visible but silent.
+ const original=String(message||'').trim();
+ const translated=localizeReply(original);
+ if(pt()&&!translated){
+   $('result').textContent=original+' · Sem tradução de voz disponível';
+   return;
+ }
+ const text=translated||original;
+ if(!text)return;
+ const locale=language;
  speaking=true;
  try{recognition?.stop()}catch(e){}
  const u=new SpeechSynthesisUtterance(text);
@@ -49,7 +58,13 @@ function speak(message){
  const voices=speechSynthesis.getVoices();
  const desired=voices.find(v=>v.lang.toLowerCase()===locale.toLowerCase())||voices.find(v=>v.lang.toLowerCase().startsWith(locale.slice(0,2).toLowerCase()+'-'));
  if(desired)u.voice=desired;
- u.onend=u.onerror=()=>{speaking=false;if(active)restart()};
+ // A missing Portuguese voice is not permission to use a Russian/English
+ // substitute: do not speak if no Portuguese voice is available.
+ if(pt()&&!desired){speaking=false;$('result').textContent=text+' · Voz portuguesa indisponível';return;}
+ let finished=false;
+ const done=()=>{if(finished)return;finished=true;speaking=false;if(active)restart()};
+ u.onend=done;
+ u.onerror=e=>{if(e.error!=='interrupted'&&e.error!=='canceled')$('result').textContent=text+' · Erro de voz: '+e.error;done()};
  speechSynthesis.cancel();speechSynthesis.speak(u);
 }
 const ones={zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19};const tens={twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
