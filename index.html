@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>RivuLog Voice Bridge</title>
 <style>:root{color-scheme:dark;--accent:#4fd1c5;--bg:#071417;--line:#285057}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#e5f6f4;font:15px system-ui,sans-serif;padding:19px}h1{font-size:25px;margin:0 0 6px}.subtitle,.muted{color:#a5c6c3}select{font:inherit;background:#19383e;color:#e5f6f4;border:1px solid var(--line);border-radius:8px;padding:10px;max-width:100%}.langrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px}.langrow label{color:#a5c6c3}section{border:1px solid var(--line);border-radius:15px;padding:15px;margin-top:15px;background:#11262a}button{font:inherit;padding:12px 15px;border:1px solid var(--line);background:#19383e;color:white;border-radius:10px;cursor:pointer}button.primary{background:var(--accent);color:#052623;font-weight:750}button:disabled{opacity:.5}.buttons{display:flex;gap:9px;flex-wrap:wrap;margin:12px 0}.status{font-weight:750;margin:10px 0;white-space:pre-wrap}.tank{font-size:34px;font-weight:850;color:var(--accent)}.heard{overflow-wrap:anywhere}table{width:100%;border-collapse:collapse;font-size:13px}td{padding:7px 4px;border-bottom:1px solid var(--line)}td:first-child{color:var(--accent);font-weight:700}small{display:block;margin-top:10px;color:#a5c6c3}.trendgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}.trendbox{background:#081c20;border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}.trendbox h3{margin:0 0 5px;font-size:17px}.trendbox svg{display:block;width:100%;height:auto}.trendhead{display:flex;align-items:center;justify-content:space-between;gap:12px}.trendhead h2{margin:0}#trends[hidden]{display:none!important}#trends{scroll-margin-top:10px} .trendsub{font-size:13px;color:#a5c6c3;margin:8px 0 14px}.diaghist{display:grid;gap:8px;margin-top:12px}.diagrow{border:1px solid var(--line);border-radius:8px;background:#0b2024;padding:9px;font-size:13px;overflow-wrap:anywhere}.diagrow strong{color:var(--accent)}.diagrow small{margin:3px 0 0}.diagempty{color:#a5c6c3}.diagstatus{font-weight:650}</style>
-</head><body><header><h1>🎤 RivuLog Voice Bridge</h1><div class="subtitle">Desktop water testing · V5.3.7</div></header>
+</head><body><header><h1>🎤 RivuLog Voice Bridge</h1><div class="subtitle">Desktop water testing · V5.3.8</div></header>
 <section><div class="muted">Connection</div><div id="connection" class="status">Waiting for RivuLog…</div><div class="langrow"><label for="language">Recognition language</label><select id="language"><option value="pt-PT">🇵🇹 Português (Portugal)</option><option value="en-GB">🇬🇧 English (UK)</option><option value="en-US">🇺🇸 English (US)</option></select></div><div id="status" class="status">Microphone is off</div><div class="buttons"><button class="primary" id="start">Start listening</button><button id="stop" disabled>Stop</button></div><div class="muted">Last heard</div><div id="heard" class="tank">—</div><div id="result" class="status muted">Say a command after connecting.</div><small>This page needs Chrome or Edge and permission to use your microphone. Keep this window open while testing.</small></section><section id="diagnostics"><div class="trendhead"><h2 id="diagtitle">Histórico de comandos</h2><button id="cleardiag" type="button">Limpar</button></div><small id="diagnote">As últimas 12 tentativas de reconhecimento, apenas nesta janela.</small><div class="diaghist" id="diaghist" aria-live="polite"></div></section>
 <section id="trends" hidden><div class="trendhead"><h2 id="trendtitle">Water trends</h2><button id="hidetrend">Hide trends</button></div><div id="trendinfo" class="trendsub">Loading…</div><div class="trendgrid" id="trendgrid"></div></section><section><h2 id="commandtitle">Comandos de voz / Voice commands</h2><table id="commandtable"></table><small id="commandnote">Say one command at a time. Switch language above before speaking.</small></section>
 <script>
@@ -11,7 +11,7 @@ let hostOrigin=null,token=null,recognition=null,active=false,speaking=false,conn
 const LANGUAGE_KEY="rivulog_voice_lang_v533";let language="pt-PT";try{language=localStorage.getItem(LANGUAGE_KEY)||"pt-PT"}catch(e){}if(!["pt-PT","en-GB","en-US"].includes(language))language="pt-PT";$("language").value=language;
 const pt=()=>language==='pt-PT';const tr=(en,port)=>pt()?port:en;
 const sayStatus=s=>{$('status').textContent=s};
-const phrases=[['Next tank','Próximo aquário / Próximo'],['Previous tank','Aquário anterior / Anterior'],['Tank eighteen','Aquário dezoito / Tanque dezoito'],['Show trend / Show charts','Mostrar gráficos / Ver gráficos'],['Hide trend / Close trend','Fechar gráficos / Voltar'],['Repeat','Repetir'],['Save (not enabled)','Guardar (ainda não disponível)'],['Stop listening','Parar de ouvir'],['Close window','Fechar aplicação']];
+const phrases=[['Next tank','Próximo aquário / Próximo'],['Previous tank','Aquário anterior / Anterior'],['Tank eighteen','Aquário dezoito / Tanque dezoito'],['Show trend / Show charts','Mostrar gráficos / Ver gráficos'],['Hide trend / Close trend','Fechar gráficos / Voltar'],['Repeat','Repetir'],['Save reading','Guardar leitura / Guardar'],['Stop listening','Parar de ouvir'],['Close window','Fechar aplicação']];
 function renderDiag(){
  $('diagtitle').textContent=tr('Command history','Histórico de comandos');
  $('cleardiag').textContent=tr('Clear','Limpar');
@@ -30,7 +30,10 @@ function localizeReply(message){
  if(!pt())return raw;
  if(/(?:[ãõáàâéêíóôúç]|\b(?:aquário|gráficos|leitura|guardar|selecionado|ligado|comando|microfone)\b)/i.test(raw) && !/^(?:Tank|Showing|Returned|Please|Open|Save|Command|No tank|Trends)/i.test(raw))return raw;
  let m;
- if((m=raw.match(/^Tank\s+(\d+)\s+selected\.$/i)))return 'Aquário '+m[1]+' selecionado.';
+ if((m=raw.match(/^Measurement saved for tank\s+(\d+)\.$/i)))return 'Leitura guardada no aquário '+m[1]+'.';
+  if(/^Meter not ready:/i.test(raw))return 'O medidor ainda não está pronto. Aguarda por uma leitura recente e estável.';
+  if(/^Save failed:/i.test(raw))return 'Não foi possível guardar a leitura. Consulta o erro no RivuLog.';
+  if((m=raw.match(/^Tank\s+(\d+)\s+selected\.$/i)))return 'Aquário '+m[1]+' selecionado.';
  if((m=raw.match(/^Showing trends for tank\s+(\d+)\.$/i)))return 'A mostrar os gráficos do aquário '+m[1]+'.';
  if((m=raw.match(/^Tank\s+(\d+)\.\s+Last saved P H\s+(.+?), conductivity\s+(.+?), T D S\s+(.+?), temperature\s+(.+)$/i)))return 'Aquário '+m[1]+'. Última leitura: pê agá '+m[2]+', condutividade '+m[3]+', T D S '+m[4]+', temperatura '+m[5]+'.';
  if((m=raw.match(/^Tank\s+(\d+); no saved reading available\.$/i)))return 'Aquário '+m[1]+'. Não existem leituras guardadas.';
@@ -45,7 +48,14 @@ function localizeReply(message){
   'Command not understood.':'Comando não reconhecido.',
   'Command processed':'Comando executado',
   'Command processed.':'Comando executado.',
-  'Save is not enabled until the meter bridge is updated and tested. No reading has been saved.':'A opção guardar ainda não está disponível. Nenhuma leitura foi guardada.'
+  'Save is not enabled until the meter bridge is updated and tested. No reading has been saved.':'A opção guardar ainda não está disponível. Nenhuma leitura foi guardada.',
+  'Save requested from meter. Waiting for the reading and database confirmation.':'Pedido de gravação enviado ao medidor. À espera da confirmação.',
+  'A save request is already pending. Please wait.':'Já há uma gravação em curso. Aguarda, por favor.',
+  'Open the RivuLog Meter window first.':'Abre primeiro a janela do medidor RivuLog.',
+  'Connect the Bluetooth meter first.':'Liga primeiro o medidor Bluetooth.',
+  'The meter has not confirmed the selected tank.':'O medidor ainda não confirmou o aquário selecionado.',
+  'Voice save timed out. The result is not confirmed. Check the water history before retrying.':'O tempo de espera terminou. Verifica o histórico antes de tentares guardar novamente.',
+  'Cannot contact the meter window.':'Não foi possível comunicar com a janela do medidor.'
  };
  return exact[raw]||null;
 }
